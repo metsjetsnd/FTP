@@ -17,43 +17,44 @@ void download(int new_s){
   int len;
   FILE *fp;
   short int bufLen;
+  //receive length of filename from client
   if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
   bufLen = ntohs(bufLen);
   char buf[bufLen];
+  //receive filename from client
   if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
   buf[strlen(buf) - 1] = '\0';
-  printf("filename: %s\n", buf);
   fp = fopen(buf, "r");
   if (fp){
     fseek(fp, 0L, SEEK_END);
     int size = ftell(fp);
-    printf("%d\n", size);
     size = htonl(size);
+    //send size of file to client
     if (send(new_s, &size, sizeof(size), 0) == -1){
       perror("Send error\n");
       exit(1);
     }
-    printf("HERE\n");
     fseek(fp, 0, SEEK_SET);
     size_t read_bytes, sent_bytes;
     char fileBuf[MAX_LINE];
+    int count = 0;
+    //while end of file has not been reached, send content of file
     while (!feof(fp)){
       fgets(fileBuf, MAX_LINE, fp);
-      printf("%s\n", fileBuf);
-      if ((sent_bytes = send(new_s, fileBuf, strlen(fileBuf), 0)) < 0){
+      if ((sent_bytes = send(new_s, fileBuf, strlen(fileBuf) + 1, 0)) < 0){
         perror("Send error\n");
         exit(1);
       }
+      bzero((char*)&fileBuf, sizeof(fileBuf));
     }
     close(fp);
   } else {
-    printf("File not found\n");
     int negInt = -1;
     negInt = htonl(negInt);
     if (send(new_s, &negInt, sizeof(negInt), 0) == -1){
@@ -88,7 +89,6 @@ void change_directory(){
 }
 
 int main(int argc, char* argv[]){
-  printf("HHHH\n");
   struct sockaddr_in sin, client_addr;
   char buf[MAX_LINE], outBuf[MAX_LINE];
   int len, addr_len, s, new_s, opt = 1;
@@ -102,7 +102,6 @@ int main(int argc, char* argv[]){
   sin.sin_family = AF_INET;
   sin.sin_addr.s_addr = INADDR_ANY;
   sin.sin_port = htons((atoi(argv[1])));
-  printf("ijdoiw]\n");
   if ((s = socket(PF_INET, SOCK_STREAM, 0)) < 0){
     perror("ftp-server: socket\n");
     exit(1);
@@ -117,21 +116,19 @@ int main(int argc, char* argv[]){
     perror("ftp-server: bind\n");
     exit(1);
   }
-  printf("djwoejfow\n");
+  
   if ((listen(s, 1)) < 0){
     perror("ftp-server: listen\n");
     exit(1);
   }
-  printf("kdjwk\n");
+  
   while (1){
     if ((new_s = accept(s, (struct sockaddr*)&sin, &len)) < 0){
       perror("ftp-server: accept\n");
       exit(1);
     }
-    printf("lkjdwoieq\n");
 
     while (1){
-      printf("djwpoej\n");
       if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
         perror("Receive error\n");
         exit(1);
