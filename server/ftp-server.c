@@ -41,15 +41,13 @@ void download(int new_s){
       exit(1);
     }
     rewind(fp);
-    printf("%d\n", ftell(fp));
     size_t read_bytes, sent_bytes;
     char fileBuf[MAX_LINE];
     int count = 0, total_bytes = 0;
     //while end of file has not been reached, send content of file
     while (1){
-      printf("%d\n", total_bytes);
-      fgets(fileBuf, MAX_LINE, fp);
-      if ((sent_bytes = send(new_s, fileBuf, strlen(fileBuf) + 1, 0)) < 0){
+      int send_len = fread(fileBuf, 1,  MAX_LINE, fp);
+      if ((sent_bytes = send(new_s, fileBuf, send_len, 0)) < 0){
         perror("Send error\n");
         exit(1);
       }
@@ -71,35 +69,39 @@ void download(int new_s){
   } 
 }
 
-void upload(int s){
-  char buf[MAX_LINE];
-  printf("Enter file to download: ");
-  fgets(buf, sizeof(buf), stdin);
-  short int len = htons(strlen(buf));
-  //send size of file name
-  if (send(s, &len, sizeof(len), 0) == -1){
-    perror("Client send error\n");
+void upload(int new_s){
+  char buf[MAX_LINE], ack_buf[5] = "Y";
+  short int bufLen;
+  //receive length of filename from client
+  if ((bufLen = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+    perror("Receive error\n");
     exit(1);
   }
-  //send file name
-  if (send(s, buf, sizeof(buf), 0) == -1){
-    perror("Client send error\n");
+  bufLen = ntohs(bufLen);
+  char filename[bufLen];
+  int len;
+  //receive filename from client
+  if ((len = recv(new_s, filename, sizeof(filename), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  if (send(new_s, ack_buf, strlen(ack_buf) + 1, 0) < 0){
+    perror("Send error\n");
     exit(1);
   }
   //receive file size
   int file_size, l;
-  if ((l = recv(s, &file_size, sizeof(file_size), 0)) == -1){
+  if ((l = recv(new_s, &file_size, sizeof(file_size), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
   file_size = ntohl(file_size);
-  if (file_size < 0){
-    printf("File does not exist on server\n");
-  } else {
+  printf("%d\n", file_size);
+  if (file_size){
     FILE *fp;
-    buf[strlen(buf) - 1] = '\0';
+    filename[strlen(filename) - 1] = '\0';
     //create file with filename
-    if ((fp = fopen(buf, "a")) == NULL){
+    if ((fp = fopen(filename, "a")) == NULL){
       perror("Error creating file");
       exit(1);
     }
@@ -107,7 +109,7 @@ void upload(int s){
     char recv_buf[MAX_LINE];
     while (1){
       //receive file content from server
-      if ((received_bytes = recv(s, recv_buf, sizeof(recv_buf), 0)) < 0){
+      if ((received_bytes = recv(new_s, recv_buf, sizeof(recv_buf), 0)) < 0){
         perror("Receive error\n");
         exit(1);
       }
@@ -124,7 +126,11 @@ void upload(int s){
         break;
       bzero((char*)&recv_buf, sizeof(recv_buf));
     }
-    printf("%s succesfully downloaded from server\n", buf);
+    char throughput[MAX_LINE] = "432432";
+    if (send(new_s, throughput, strlen(throughput) + 1, 0) < 0){
+      perror("Send error\n");
+      exit(1);
+    }
     close(fp);
   }
 }
@@ -199,7 +205,7 @@ int main(int argc, char* argv[]){
       if (!strncmp(buf, "DWLD", 4))
         download(new_s);
       if (!strncmp(buf, "UPLD", 4))
-        upload();
+        upload(new_s);
       if (!strncmp(buf, "DELF", 4))
         delete_file();
       if (!strncmp(buf, "LIST", 4))
