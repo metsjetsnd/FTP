@@ -49,20 +49,19 @@ void download(int s){
         exit(1);
       }
       int i;
-      for (i = 0; i < received_bytes - 1; i++){
+      for (i = 0; i < received_bytes; i++){
+        //if (i > 0 && recv_buf[i] == '\0' && recv_buf[i - 1] == '\n')
+          //continue;
         //print byte to file
         fprintf(fp, "%c", recv_buf[i]);
-        //random character was printing after newline, so skip it
-        if (recv_buf[i] == '\n')
-          i++;
-      }
+      } 
       total_bytes += received_bytes;
       //if all file content has been receieved, break out of loop
       if (total_bytes >= file_size)
         break;
       bzero((char*)&recv_buf, sizeof(recv_buf));
     }
-    printf("%s succesfully downloaded from server", buf);
+    printf("%s succesfully downloaded from server\n", buf);
     close(fp);
   }
 }

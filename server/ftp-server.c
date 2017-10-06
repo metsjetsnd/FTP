@@ -34,23 +34,29 @@ void download(int new_s){
   if (fp){
     fseek(fp, 0L, SEEK_END);
     int size = ftell(fp);
-    size = htonl(size);
+    int n_size = htonl(size);
     //send size of file to client
-    if (send(new_s, &size, sizeof(size), 0) == -1){
+    if (send(new_s, &n_size, sizeof(n_size), 0) == -1){
       perror("Send error\n");
       exit(1);
     }
-    fseek(fp, 0, SEEK_SET);
+    rewind(fp);
+    printf("%d\n", ftell(fp));
     size_t read_bytes, sent_bytes;
     char fileBuf[MAX_LINE];
-    int count = 0;
+    int count = 0, total_bytes = 0;
     //while end of file has not been reached, send content of file
-    while (!feof(fp)){
+    while (1){
+      printf("%d\n", total_bytes);
       fgets(fileBuf, MAX_LINE, fp);
       if ((sent_bytes = send(new_s, fileBuf, strlen(fileBuf) + 1, 0)) < 0){
         perror("Send error\n");
         exit(1);
       }
+      total_bytes += sent_bytes;
+      //break if whole file has been sent
+      if (total_bytes >= size)
+        break;
       bzero((char*)&fileBuf, sizeof(fileBuf));
     }
     close(fp);
@@ -61,6 +67,7 @@ void download(int new_s){
       perror("Send error\n");
       exit(1);
     }
+    close(fp);
   } 
 }
 
