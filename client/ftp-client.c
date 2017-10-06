@@ -66,6 +66,64 @@ void download(int s){
   }
 }
 
+void upload(int new_s){
+  int len;
+  FILE *fp;
+  short int bufLen;
+  //receive length of filename from client
+  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  bufLen = ntohs(bufLen);
+  char buf[bufLen];
+  //receive filename from client
+  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  buf[strlen(buf) - 1] = '\0';
+  fp = fopen(buf, "r");
+  if (fp){
+    fseek(fp, 0L, SEEK_END);
+    int size = ftell(fp);
+    int n_size = htonl(size);
+    //send size of file to client
+    if (send(new_s, &n_size, sizeof(n_size), 0) == -1){
+      perror("Send error\n");
+      exit(1);
+    }
+    rewind(fp);
+    printf("%d\n", ftell(fp));
+    size_t read_bytes, sent_bytes;
+    char fileBuf[MAX_LINE];
+    int count = 0, total_bytes = 0;
+    //while end of file has not been reached, send content of file
+    while (1){
+      printf("%d\n", total_bytes);
+      fgets(fileBuf, MAX_LINE, fp);
+      if ((sent_bytes = send(new_s, fileBuf, strlen(fileBuf) + 1, 0)) < 0){
+        perror("Send error\n");
+        exit(1);
+      }
+      total_bytes += sent_bytes;
+      //break if whole file has been sent
+      if (total_bytes >= size)
+        break;
+      bzero((char*)&fileBuf, sizeof(fileBuf));
+    }
+    close(fp);
+  } else {
+    int negInt = -1;
+    negInt = htonl(negInt);
+    if (send(new_s, &negInt, sizeof(negInt), 0) == -1){
+      perror("Send error\n");
+      exit(1);
+    }
+    close(fp);
+  } 
+}
+
 int main(int argc, char * argv[]){
   FILE *fp;
   struct hostent *hp;
