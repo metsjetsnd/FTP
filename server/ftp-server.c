@@ -9,6 +9,7 @@
 #include <time.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <dirent.h>
 
 #define MAX_PENDING 5
 #define MAX_LINE 4096
@@ -16,14 +17,14 @@
 void download(int new_s){
   int len;
   FILE *fp;
-  short int bufLen;
+  short int buf_len;
   //receive length of filename from client
-  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+  if ((len = recv(new_s, &buf_len, sizeof(buf_len), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  bufLen = ntohs(bufLen);
-  char buf[bufLen];
+  buf_len = ntohs(buf_len);
+  char buf[buf_len];
   //receive filename from client
   if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
     perror("Receive error\n");
@@ -42,12 +43,12 @@ void download(int new_s){
     }
     rewind(fp);
     size_t read_bytes, sent_bytes;
-    char fileBuf[MAX_LINE];
+    char file_buf[MAX_LINE];
     int count = 0, total_bytes = 0;
     //while end of file has not been reached, send content of file
     while (1){
-      int send_len = fread(fileBuf, 1,  MAX_LINE, fp);
-      if ((sent_bytes = send(new_s, fileBuf, send_len, 0)) < 0){
+      int send_len = fread(file_buf, 1,  MAX_LINE, fp);
+      if ((sent_bytes = send(new_s, file_buf, send_len, 0)) < 0){
         perror("Send error\n");
         exit(1);
       }
@@ -55,13 +56,13 @@ void download(int new_s){
       //break if whole file has been sent
       if (total_bytes >= size)
         break;
-      bzero((char*)&fileBuf, sizeof(fileBuf));
+      bzero((char*)&file_buf, sizeof(file_buf));
     }
     close(fp);
   } else {
-    int negInt = -1;
-    negInt = htonl(negInt);
-    if (send(new_s, &negInt, sizeof(negInt), 0) == -1){
+    int neg_int = -1;
+    neg_int = htonl(neg_int);
+    if (send(new_s, &neg_int, sizeof(neg_int), 0) == -1){
       perror("Send error\n");
       exit(1);
     }
@@ -71,37 +72,43 @@ void download(int new_s){
 
 void upload(int new_s){
   char buf[MAX_LINE], ack_buf[5] = "Y";
-  short int bufLen;
+  short int buf_len;
   //receive length of filename from client
-  if ((bufLen = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+  if (recv(new_s, &buf_len, sizeof(buf_len), 0) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  bufLen = ntohs(bufLen);
-  char filename[bufLen];
+  buf_len = ntohs(buf_len);
+  char filename[buf_len];
   int len;
   //receive filename from client
   if ((len = recv(new_s, filename, sizeof(filename), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
+  filename[strlen(filename) - 1] = '\0';
+  printf("%s\n", filename);
   if (send(new_s, ack_buf, strlen(ack_buf) + 1, 0) < 0){
     perror("Send error\n");
     exit(1);
   }
   //receive file size
-  int file_size, l;
-  if ((l = recv(new_s, &file_size, sizeof(file_size), 0)) == -1){
+  int file_size, temp;
+  if (recv(new_s, &temp, sizeof(temp), 0) == -1){
+    perror("Receive error\n");
+  }
+  if (recv(new_s, &file_size, sizeof(file_size), 0) == -1){
     perror("Receive error\n");
     exit(1);
   }
   file_size = ntohl(file_size);
-  printf("%d\n", file_size);
-  if (file_size){
+  
+  if (file_size < 0){
+    printf("File does not exist on server\n");
+  } else {
     FILE *fp;
-    filename[strlen(filename) - 1] = '\0';
     //create file with filename
-    if ((fp = fopen(filename, "a")) == NULL){
+    if ((fp = fopen(filename, "w")) == NULL){
       perror("Error creating file");
       exit(1);
     }
@@ -114,19 +121,19 @@ void upload(int new_s){
         exit(1);
       }
       int i;
+      //print received bytes to file
       for (i = 0; i < received_bytes; i++){
-        //if (i > 0 && recv_buf[i] == '\0' && recv_buf[i - 1] == '\n')
-          //continue;
-        //print byte to file
+        printf("%c", recv_buf[i]);
         fprintf(fp, "%c", recv_buf[i]);
-      } 
+      }
+      fflush(fp);
       total_bytes += received_bytes;
       //if all file content has been receieved, break out of loop
       if (total_bytes >= file_size)
         break;
       bzero((char*)&recv_buf, sizeof(recv_buf));
     }
-    char throughput[MAX_LINE] = "432432";
+    char throughput[MAX_LINE] = "3245";
     if (send(new_s, throughput, strlen(throughput) + 1, 0) < 0){
       perror("Send error\n");
       exit(1);
@@ -135,24 +142,251 @@ void upload(int new_s){
   }
 }
 
-void delete_file(){
-
-}
-
-void list(){
-
-}
-
-void make_directory(){
-
-}
-
-void remove_directory(){
-
-}
-
-void change_directory(){
+void delete_file(int new_s){
+  int len;
+  FILE *fp;
+  short int bufLen;
+  //receive length of filename from client
+  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  bufLen = ntohs(bufLen);
+  char buf[bufLen];
+  //receive filename from client
+  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  buf[bufLen] = '\0';
+  fp = fopen(buf, "r");
+  int confirm;
+  if (fp){ 
+    confirm = 1;
+    //printf
+  } else {
+    confirm = -1;
+  }
+  int n_confirm = htonl(confirm);
+  //send confirm of file to client
+  if (send(new_s, &n_confirm, sizeof(n_confirm), 0) == -1){
+    perror("Send error\n");
+    exit(1);
+  }
+  if (confirm < 0)
+    return;
   
+  char temp[MAX_LINE], should_delete[MAX_LINE];
+  //empty character stuck in stream for unknown reason, hold it in temp file 
+  if (recv(new_s, temp, sizeof(temp), 0) < 0){
+    perror("Receive error\n");
+    exit(1);
+  }
+  //receive Y/N confirmation
+  if (recv(new_s, should_delete, sizeof(should_delete), 0) < 0){
+    perror("Receive error\n");
+    exit(1);
+  }
+  if (strncmp(should_delete, "Y", 1))
+    return;
+  int rem = remove(buf);
+  if (rem < 0){
+    char n[MAX_LINE] = "N";
+    if (send(new_s, n, sizeof(n), 0) == -1){
+      perror("Send error\n");
+      exit(1);
+    }
+  } else {
+    char y[MAX_LINE] = "Y";
+    if (send(new_s, y, sizeof(y), 0) == -1){
+      perror("Send error\n");
+      exit(1);
+    }
+  }
+}
+
+void list(int new_s){
+  FILE *fp, *fp2;
+  char buf[MAX_LINE];
+  fp = popen("ls -al", "r");
+  fp2 = fopen("/tmp/compnettempfile", "w+");
+  while (fgets(buf, sizeof(buf) - 1, fp) != NULL){
+    fprintf(fp2, "%s", buf);
+  }
+  close(fp);
+  if (fp2){
+    rewind(fp2);
+    fseek(fp2, 0L, SEEK_END);
+    int size = ftell(fp2);
+    int n_size = htonl(size);
+    //send size of file to client
+    if (send(new_s, &n_size, sizeof(n_size), 0) == -1){
+      perror("Send error\n");
+      exit(1);
+    }
+    rewind(fp2);
+    size_t read_bytes, sent_bytes;
+    char file_buf[MAX_LINE];
+    int count = 0, total_bytes = 0;
+    //while end of file has not been reached, send content of file
+    while (1){
+      int send_len = fread(file_buf, 1,  MAX_LINE, fp2);
+      if ((sent_bytes = send(new_s, file_buf, send_len, 0)) < 0){
+        perror("Send error\n");
+        exit(1);
+      }
+      total_bytes += sent_bytes;
+      //break if whole file has been sent
+      if (total_bytes >= size)
+        break;
+      bzero((char*)&file_buf, sizeof(file_buf));
+    }
+    close(fp2);
+  } else {
+    printf("FAIL\n");
+    int neg_int = -1;
+    neg_int = htonl(neg_int);
+    if (send(new_s, &neg_int, sizeof(neg_int), 0) == -1){
+      perror("Send error\n");
+      exit(1);
+    }
+    close(fp2);
+  } 
+}
+
+void make_directory(int new_s){
+  int len;
+  short int bufLen;
+  //receive length of filename from client
+  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  bufLen = ntohs(bufLen);
+  char buf[bufLen];
+  //receive filename from client
+  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  buf[bufLen] = '\0';
+  DIR* dir = opendir(buf);
+  int confirm;
+  if (!dir){
+    int success = mkdir(buf, 0700);
+    if (success == -1)
+      confirm = -1;
+    else
+      confirm = 1;
+  } else {
+    confirm = -2;
+  }
+  confirm = htonl(confirm);
+  if (send(new_s, &confirm, sizeof(confirm), 0) == -1){
+    perror("Send error\n");
+    exit(1);
+  }
+}
+
+void remove_directory(int new_s){
+  int len;
+  DIR *dir;
+  short int bufLen;
+  //receive length of filename from client
+  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  bufLen = ntohs(bufLen);
+  char buf[bufLen];
+  //receive filename from client
+  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  buf[bufLen] = '\0';
+  dir = opendir(buf);
+  int confirm;
+  if (dir){ 
+    confirm = 1;
+  } else {
+    confirm = -1;
+  }
+  int n_confirm = htonl(confirm);
+  //send confirm of file to client
+  if (send(new_s, &n_confirm, sizeof(n_confirm), 0) == -1){
+    perror("Send error\n");
+    exit(1);
+  }
+  if (confirm < 0)
+    return;
+  
+  char temp[MAX_LINE], should_delete[MAX_LINE];
+  //empty character stuck in stream for unknown reason, hold it in temp file 
+  if (recv(new_s, temp, sizeof(temp), 0) < 0){
+    perror("Receive error\n");
+    exit(1);
+  }
+  //receive Y/N confirmation
+  if (recv(new_s, should_delete, sizeof(should_delete), 0) < 0){
+    perror("Receive error\n");
+    exit(1);
+  }
+  if (strncmp(should_delete, "Y", 1))
+    return;
+  struct dirent *d;
+  int num_entries = 0, rem;
+  while ((d = readdir(dir)) != NULL)
+    num_entries++;
+  if (num_entries)
+    rem = rmdir(buf);
+  if (!num_entries || rem < 0){
+    char n[MAX_LINE] = "N";
+    if (send(new_s, n, sizeof(n), 0) == -1){
+      perror("Send error\n");
+      exit(1);
+    }
+  } else {
+    char y[MAX_LINE] = "Y";
+    if (send(new_s, y, sizeof(y), 0) == -1){
+      perror("Send error\n");
+      exit(1);
+    }
+  }
+}
+
+void change_directory(int new_s){
+  int len;
+  short int bufLen;
+  //receive length of filename from client
+  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  bufLen = ntohs(bufLen);
+  char buf[bufLen];
+  //receive filename from client
+  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+    perror("Receive error\n");
+    exit(1);
+  }
+  buf[bufLen] = '\0';
+  DIR* dir = opendir(buf);
+  int confirm;
+  if (dir){
+    int success = chdir(buf);
+    if (success == -1)
+      confirm = -1;
+    else
+      confirm = 1;
+  } else {
+    confirm = -2;
+  }
+  confirm = htonl(confirm);
+  if (send(new_s, &confirm, sizeof(confirm), 0) == -1){
+    perror("Send error\n");
+    exit(1);
+  }
 }
 
 int main(int argc, char* argv[]){
@@ -207,15 +441,15 @@ int main(int argc, char* argv[]){
       if (!strncmp(buf, "UPLD", 4))
         upload(new_s);
       if (!strncmp(buf, "DELF", 4))
-        delete_file();
+        delete_file(new_s);
       if (!strncmp(buf, "LIST", 4))
-        list();
+        list(new_s);
       if (!strncmp(buf, "MDIR", 4))
-        make_directory();
+        make_directory(new_s);
       if (!strncmp(buf, "RDIR", 4))
-        remove_directory();
+        remove_directory(new_s);
       if (!strncmp(buf, "CDIR", 4))
-        change_directory();
+        change_directory(new_s);
       bzero((char*)&buf, sizeof(buf));
     }
   }
