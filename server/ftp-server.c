@@ -1,5 +1,5 @@
-//Shane Brosnan
-//sbrosna1
+//Shane Brosnan (sbrosna1), Jospeh Spencer (jspence5), Tommy Lynch (client code)
+//server code
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <dirent.h>
+#include <time.h>
 
 #define MAX_PENDING 5
 #define MAX_LINE 4096
@@ -26,7 +27,7 @@ void download(int new_s){
   buf_len = ntohs(buf_len);
   char buf[buf_len];
   //receive filename from client
-  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+  if ((len = recv(new_s, buf, buf_len, 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
@@ -73,6 +74,7 @@ void download(int new_s){
 void upload(int new_s){
   char buf[MAX_LINE], ack_buf[5] = "Y";
   short int buf_len;
+  struct timeval start, end;
   //receive length of filename from client
   if (recv(new_s, &buf_len, sizeof(buf_len), 0) == -1){
     perror("Receive error\n");
@@ -82,27 +84,23 @@ void upload(int new_s){
   char filename[buf_len];
   int len;
   //receive filename from client
-  if ((len = recv(new_s, filename, sizeof(filename), 0)) == -1){
+  if ((len = recv(new_s, filename, buf_len, 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  filename[strlen(filename) - 1] = '\0';
-  printf("%s\n", filename);
+  filename[buf_len - 1] = '\0';
+  //send ack
   if (send(new_s, ack_buf, strlen(ack_buf) + 1, 0) < 0){
     perror("Send error\n");
     exit(1);
   }
   //receive file size
   int file_size, temp;
-  if (recv(new_s, &temp, sizeof(temp), 0) == -1){
-    perror("Receive error\n");
-  }
   if (recv(new_s, &file_size, sizeof(file_size), 0) == -1){
     perror("Receive error\n");
     exit(1);
   }
   file_size = ntohl(file_size);
-  
   if (file_size < 0){
     printf("File does not exist on server\n");
   } else {
@@ -114,6 +112,7 @@ void upload(int new_s){
     }
     int received_bytes, total_bytes = 0;
     char recv_buf[MAX_LINE];
+    gettimeofday(&start, NULL);
     while (1){
       //receive file content from server
       if ((received_bytes = recv(new_s, recv_buf, sizeof(recv_buf), 0)) < 0){
@@ -123,7 +122,6 @@ void upload(int new_s){
       int i;
       //print received bytes to file
       for (i = 0; i < received_bytes; i++){
-        printf("%c", recv_buf[i]);
         fprintf(fp, "%c", recv_buf[i]);
       }
       fflush(fp);
@@ -133,8 +131,11 @@ void upload(int new_s){
         break;
       bzero((char*)&recv_buf, sizeof(recv_buf));
     }
-    char throughput[MAX_LINE] = "3245";
-    if (send(new_s, throughput, strlen(throughput) + 1, 0) < 0){
+    gettimeofday(&end, NULL);
+    int time_diff = ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+    time_diff = htonl(time_diff);
+    //send time for calc of throughput
+    if (send(new_s, &time_diff, sizeof(time_diff), 0) < 0){
       perror("Send error\n");
       exit(1);
     }
@@ -145,25 +146,24 @@ void upload(int new_s){
 void delete_file(int new_s){
   int len;
   FILE *fp;
-  short int bufLen;
+  short int buf_len;
   //receive length of filename from client
-  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+  if ((len = recv(new_s, &buf_len, sizeof(buf_len), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  bufLen = ntohs(bufLen);
-  char buf[bufLen];
+  buf_len = ntohs(buf_len);
+  char buf[buf_len];
   //receive filename from client
-  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+  if ((len = recv(new_s, buf, buf_len, 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  buf[bufLen] = '\0';
+  buf[buf_len - 1] = '\0';
   fp = fopen(buf, "r");
   int confirm;
   if (fp){ 
     confirm = 1;
-    //printf
   } else {
     confirm = -1;
   }
@@ -175,13 +175,7 @@ void delete_file(int new_s){
   }
   if (confirm < 0)
     return;
-  
-  char temp[MAX_LINE], should_delete[MAX_LINE];
-  //empty character stuck in stream for unknown reason, hold it in temp file 
-  if (recv(new_s, temp, sizeof(temp), 0) < 0){
-    perror("Receive error\n");
-    exit(1);
-  }
+  char should_delete[MAX_LINE];
   //receive Y/N confirmation
   if (recv(new_s, should_delete, sizeof(should_delete), 0) < 0){
     perror("Receive error\n");
@@ -208,8 +202,9 @@ void delete_file(int new_s){
 void list(int new_s){
   FILE *fp, *fp2;
   char buf[MAX_LINE];
-  fp = popen("ls -al", "r");
+  fp = popen("ls -l", "r");
   fp2 = fopen("/tmp/compnettempfile", "w+");
+  //write output of popen to file in temp dir
   while (fgets(buf, sizeof(buf) - 1, fp) != NULL){
     fprintf(fp2, "%s", buf);
   }
@@ -243,7 +238,6 @@ void list(int new_s){
     }
     close(fp2);
   } else {
-    printf("FAIL\n");
     int neg_int = -1;
     neg_int = htonl(neg_int);
     if (send(new_s, &neg_int, sizeof(neg_int), 0) == -1){
@@ -256,20 +250,20 @@ void list(int new_s){
 
 void make_directory(int new_s){
   int len;
-  short int bufLen;
+  short int buf_len;
   //receive length of filename from client
-  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+  if ((len = recv(new_s, &buf_len, sizeof(buf_len), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  bufLen = ntohs(bufLen);
-  char buf[bufLen];
+  buf_len = ntohs(buf_len);
+  char buf[buf_len];
   //receive filename from client
-  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+  if ((len = recv(new_s, buf, buf_len, 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  buf[bufLen] = '\0';
+  buf[buf_len - 1] = '\0';
   DIR* dir = opendir(buf);
   int confirm;
   if (!dir){
@@ -291,20 +285,20 @@ void make_directory(int new_s){
 void remove_directory(int new_s){
   int len;
   DIR *dir;
-  short int bufLen;
+  short int buf_len;
   //receive length of filename from client
-  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+  if ((len = recv(new_s, &buf_len, sizeof(buf_len), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  bufLen = ntohs(bufLen);
-  char buf[bufLen];
+  buf_len = ntohs(buf_len);
+  char buf[buf_len];
   //receive filename from client
-  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+  if ((len = recv(new_s, buf, buf_len, 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  buf[bufLen] = '\0';
+  buf[buf_len - 1] = '\0';
   dir = opendir(buf);
   int confirm;
   if (dir){ 
@@ -322,25 +316,23 @@ void remove_directory(int new_s){
     return;
   
   char temp[MAX_LINE], should_delete[MAX_LINE];
-  //empty character stuck in stream for unknown reason, hold it in temp file 
-  if (recv(new_s, temp, sizeof(temp), 0) < 0){
-    perror("Receive error\n");
-    exit(1);
-  }
   //receive Y/N confirmation
   if (recv(new_s, should_delete, sizeof(should_delete), 0) < 0){
     perror("Receive error\n");
     exit(1);
   }
+  should_delete[1] = '\0';
   if (strncmp(should_delete, "Y", 1))
     return;
   struct dirent *d;
   int num_entries = 0, rem;
   while ((d = readdir(dir)) != NULL)
     num_entries++;
-  if (num_entries)
+  //if diretory is empty
+  printf("%d\n", num_entries);
+  if (num_entries == 2)
     rem = rmdir(buf);
-  if (!num_entries || rem < 0){
+  if (num_entries > 2 || rem < 0){
     char n[MAX_LINE] = "N";
     if (send(new_s, n, sizeof(n), 0) == -1){
       perror("Send error\n");
@@ -357,20 +349,20 @@ void remove_directory(int new_s){
 
 void change_directory(int new_s){
   int len;
-  short int bufLen;
+  short int buf_len;
   //receive length of filename from client
-  if ((len = recv(new_s, &bufLen, sizeof(bufLen), 0)) == -1){
+  if ((len = recv(new_s, &buf_len, sizeof(buf_len), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  bufLen = ntohs(bufLen);
-  char buf[bufLen];
+  buf_len = ntohs(buf_len);
+  char buf[buf_len];
   //receive filename from client
-  if ((len = recv(new_s, buf, sizeof(buf), 0)) == -1){
+  if ((len = recv(new_s, buf, buf_len, 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
-  buf[bufLen] = '\0';
+  buf[buf_len - 1] = '\0';
   DIR* dir = opendir(buf);
   int confirm;
   if (dir){
@@ -452,6 +444,9 @@ int main(int argc, char* argv[]){
         change_directory(new_s);
       bzero((char*)&buf, sizeof(buf));
     }
+    //change back to server home directory
+    chdir("/afs/nd.edu/user10/sbrosna1/compnet/pa3/server");
+    close(new_s);
   }
   close(s);
 }

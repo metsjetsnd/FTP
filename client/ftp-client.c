@@ -1,3 +1,5 @@
+//Shane Brosnan (sbrosna1), Joseph Spencer (jspence5), Tommy Lynch (tlynch)
+//Client code
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,10 +8,12 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include <time.h>
 #define MAX_LINE 4096
 
 void download(int s){
   char buf[MAX_LINE];
+  struct timeval start, end;
   printf("Enter file to download: ");
   fgets(buf, sizeof(buf), stdin);
   short int len = htons(strlen(buf));
@@ -19,7 +23,7 @@ void download(int s){
     exit(1);
   }
   //send file name
-  if (send(s, buf, sizeof(buf), 0) == -1){
+  if (send(s, buf, strlen(buf), 0) == -1){
     perror("Client send error\n");
     exit(1);
   }
@@ -42,6 +46,7 @@ void download(int s){
     }
     int received_bytes, total_bytes = 0;
     char recv_buf[MAX_LINE];
+    gettimeofday(&start, NULL);
     while (1){
       //receive file content from server
       if ((received_bytes = recv(s, recv_buf, sizeof(recv_buf), 0)) < 0){
@@ -60,7 +65,11 @@ void download(int s){
         break;
       bzero((char*)&recv_buf, sizeof(recv_buf));
     }
-    printf("%s succesfully downloaded from server\n", buf);
+    gettimeofday(&end, NULL);
+    int time_diff = ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+    double sec = ((double) time_diff) / 1000000.0;
+    double throughput = (((double) file_size) / 1000000.0) / sec;
+    printf("Download Successful\n%d bytes in %f s: %fMB/s\n", file_size, sec, throughput);
     close(fp);
   }
 }
@@ -79,16 +88,16 @@ void upload(int s){
     exit(1);
   }
   //send file name
-  if (send(s, buf, strlen(buf) + 1, 0) == -1){
+  if (send(s, buf, strlen(buf), 0) == -1){
     perror("Client send error\n");
     exit(1);
   } 
   char ack_buf[MAX_LINE];
+  //receive acknowledgement
   if (recv(s, ack_buf, sizeof(ack_buf), 0) == -1){
     perror("Receive error\n");
     exit (1);
   }
-  printf("%s\n", ack_buf);
   if (strncmp("Y", ack_buf, 1)){
     printf("ACK Error\n");
     return;
@@ -104,7 +113,6 @@ void upload(int s){
       perror("Send error\n");
       exit(1);
     }
-    printf("%d\n", size);
     rewind(fp);
     size_t read_bytes, sent_bytes;
     char file_buf[MAX_LINE];
@@ -122,12 +130,16 @@ void upload(int s){
         break;
       bzero((char*)&file_buf, sizeof(file_buf));
     }
-    char tp[MAX_LINE];
-    if (recv(s, tp, sizeof(tp), 0) < 0){
+    int time_diff;
+    //receive time for throughput calculation
+    if (recv(s, &time_diff, sizeof(time_diff), 0) < 0){
       perror("Receive error\n");
       exit(1);
     }
-    printf("Throughput: %s\n", tp);
+    time_diff = ntohl(time_diff);
+    double sec = ((double) time_diff) / 1000000.0;
+    double throughput = (((double) size) / 1000000.0) / sec;
+    printf("Upload Successful\n%d bytes in %f s: %fMB/s\n", size, sec, throughput);
     close(fp);
   } else {
     printf("File not found\n");
@@ -138,7 +150,6 @@ void delete_file(int s){
   char buf[MAX_LINE];
   printf("Enter file to delete: ");
   fgets(buf, sizeof(buf), stdin);
-  buf[strlen(buf) - 1] = '\0';
   short int len = htons(strlen(buf));
   //send size of file name
   if (send(s, &len, sizeof(len), 0) == -1){
@@ -146,21 +157,23 @@ void delete_file(int s){
     exit(1);
   }
   //send file name
-  if (send(s, buf, strlen(buf) + 1, 0) == -1){
+  if (send(s, buf, strlen(buf), 0) == -1){
     perror("Client send error\n");
     exit(1);
   }
   int confirm, l;
+  //receive confirmation that file exists
   if ((l = recv(s, &confirm, sizeof(confirm), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
   confirm = ntohl(confirm);
   if (confirm > 0){
-    printf("Are you sure you want to delete %s? (Y/N): ", buf);
+    printf("Are you sure you want to delete the file? (Y/N): ");
     bzero((char*)&buf, sizeof(buf));
     fgets(buf, sizeof(buf), stdin);
     buf[strlen(buf) - 1] = '\0';
+    //send confirmation
     if (send(s, buf, strlen(buf) + 1, 0) == -1){
       perror("Send error\n");
       exit(1);
@@ -185,7 +198,6 @@ void delete_file(int s){
 
 void list(int s){
   char buf[MAX_LINE];
-
   //receive file size
   int file_size, l;
   if ((l = recv(s, &file_size, sizeof(file_size), 0)) == -1){
@@ -199,7 +211,6 @@ void list(int s){
     int received_bytes, total_bytes = 0;
     char recv_buf[MAX_LINE];
     while (1){
-
       //receive file content from server
       if ((received_bytes = recv(s, recv_buf, sizeof(recv_buf), 0)) < 0){
         perror("Receive error\n");
@@ -223,7 +234,6 @@ void make_directory(int s){
   char buf[MAX_LINE];
   printf("Enter name of directory: ");
   fgets(buf, sizeof(buf), stdin);
-  buf[strlen(buf) - 1] = '\0';
   short int len = htons(strlen(buf));
   //send size of file name
   if (send(s, &len, sizeof(len), 0) == -1){
@@ -231,11 +241,12 @@ void make_directory(int s){
     exit(1);
   }
   //send file name
-  if (send(s, buf, sizeof(buf), 0) == -1){
+  if (send(s, buf, strlen(buf), 0) == -1){
     perror("Client send error\n");
     exit(1);
   }
   int confirm;
+  //receive status from server
   if (recv(s, &confirm, sizeof(confirm), 0) == -1){
     perror("Receive error\n");
     exit(1);
@@ -254,7 +265,6 @@ void remove_directory(int s){
   char buf[MAX_LINE];
   printf("Enter directory to delete: ");
   fgets(buf, sizeof(buf), stdin);
-  buf[strlen(buf) - 1] = '\0';
   short int len = htons(strlen(buf));
   //send size of file name
   if (send(s, &len, sizeof(len), 0) == -1){
@@ -262,22 +272,22 @@ void remove_directory(int s){
     exit(1);
   }
   //send file name
-  if (send(s, buf, strlen(buf) + 1, 0) == -1){
+  if (send(s, buf, strlen(buf), 0) == -1){
     perror("Client send error\n");
     exit(1);
   }
   int confirm, l;
+  //receieve from server whether directory exists on server
   if ((l = recv(s, &confirm, sizeof(confirm), 0)) == -1){
     perror("Receive error\n");
     exit(1);
   }
   confirm = ntohl(confirm);
   if (confirm > 0){
-    printf("Are you sure you want to delete %s? (Y/N): ", buf);
+    printf("Are you sure you want to delete directory? (Y/N): ");
     bzero((char*)&buf, sizeof(buf));
     fgets(buf, sizeof(buf), stdin);
-    buf[strlen(buf) - 1] = '\0';
-    if (send(s, buf, strlen(buf) + 1, 0) == -1){
+    if (send(s, buf, strlen(buf), 0) == -1){
       perror("Send error\n");
       exit(1);
     }
@@ -285,6 +295,7 @@ void remove_directory(int s){
       printf("Delete directory abandoned\n");
     } else {
       bzero((char*)&buf, sizeof(buf));
+      //receive confirmation that dir was deleted
       if (recv(s, buf, sizeof(buf), 0) == -1){
         perror("Receieve error\n");
         exit(1);
@@ -297,14 +308,12 @@ void remove_directory(int s){
   } else {
     printf("Directory does not exist on server\n");
   }
-
 }
 
 void change_directory(int s){
   char buf[MAX_LINE];
   printf("Enter name of directory: ");
   fgets(buf, sizeof(buf), stdin);
-  buf[strlen(buf) - 1] = '\0';
   short int len = htons(strlen(buf));
   //send size of file name
   if (send(s, &len, sizeof(len), 0) == -1){
@@ -312,11 +321,12 @@ void change_directory(int s){
     exit(1);
   }
   //send file name
-  if (send(s, buf, sizeof(buf), 0) == -1){
+  if (send(s, buf, strlen(buf), 0) == -1){
     perror("Client send error\n");
     exit(1);
   }
   int confirm;
+  //receive status from server
   if (recv(s, &confirm, sizeof(confirm), 0) == -1){
     perror("Receive error\n");
     exit(1);
